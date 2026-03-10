@@ -106,13 +106,26 @@ def process_texture_set(diffuse_path, normal_path, ordp_path, output_dir, base_n
         ordp_b = np.clip(ordp_channels.get('B', ordp_channels.get('b', 0)) * 255, 0, 255).astype(np.uint8)  # Displacement
 
         # Create 4K_DR: RGB from diffuse, Alpha from ORDp green (roughness)
-        dr_array = np.stack([diffuse_r, diffuse_g, diffuse_b, ordp_g], axis=-1)
+        # Apply gamma correction for sRGB (diffuse textures should be in sRGB space)
+        gamma = 1.0 / 2.2
+        diffuse_r_srgb = np.power(diffuse_r / 255.0, gamma) * 255.0
+        diffuse_g_srgb = np.power(diffuse_g / 255.0, gamma) * 255.0
+        diffuse_b_srgb = np.power(diffuse_b / 255.0, gamma) * 255.0
+        ordp_g_srgb = np.power(ordp_g / 255.0, gamma) * 255.0
+
+        dr_array = np.stack([
+            diffuse_r_srgb.astype(np.uint8),
+            diffuse_g_srgb.astype(np.uint8),
+            diffuse_b_srgb.astype(np.uint8),
+            ordp_g_srgb.astype(np.uint8)
+        ], axis=-1)
         dr_image = Image.fromarray(dr_array, 'RGBA')
         dr_output = output_dir / f"{base_name}_4K_DR.png"
         dr_image.save(dr_output, 'PNG')
         print(f"  Created: {dr_output.name}")
 
         # Create 4K_ND: RGB from normal, Alpha from ORDp blue (displacement)
+        # Normal maps stay linear (no gamma correction)
         nd_array = np.stack([normal_r, normal_g, normal_b, ordp_b], axis=-1)
         nd_image = Image.fromarray(nd_array, 'RGBA')
         nd_output = output_dir / f"{base_name}_4K_ND.png"
@@ -126,50 +139,84 @@ def process_texture_set(diffuse_path, normal_path, ordp_path, output_dir, base_n
         return False
 
 
-def find_texture_sets(input_dir):
+def find_texture_sets(input_dir, log_func=None):
     """
     Find all texture sets in the input directory (including subdirectories).
+    Matches files by their unique ID (the part before _4K_X).
     Returns a list of tuples: (diffuse_path, normal_path, ordp_path, base_name)
     """
+    if log_func is None:
+        log_func = print
+
     input_path = Path(input_dir)
     texture_sets = {}
 
-    # Find all EXR files
-    for exr_file in input_path.rglob("*.exr"):
+    # Find all EXR files (both .exr and .EXR)
+    exr_files = list(input_path.rglob("*.exr")) + list(input_path.rglob("*.EXR"))
+
+    log_func(f"Found {len(exr_files)} EXR files total")
+
+    for exr_file in exr_files:
         filename = exr_file.stem
+        log_func(f"Checking file: {filename}")
 
-        # Determine texture type and base name
-        if filename.endswith("_4K_D"):
-            base_name = filename[:-5]  # Remove _4K_D
-            if base_name not in texture_sets:
-                texture_sets[base_name] = {}
-            texture_sets[base_name]['diffuse'] = exr_file
+        # Extract the unique ID (the part before _4K_)
+        # Example: T_Forest_Floor_wgxsded_4K_D -> wgxsded
+        if "_4K_D" in filename:
+            # Find the ID (part between last underscore before _4K and _4K)
+            parts = filename.split("_4K_")
+            if len(parts) == 2:
+                # Get everything before _4K_D
+                prefix = parts[0]
+                # Extract ID (last part after underscore)
+                id_match = prefix.split("_")
+                unique_id = id_match[-1] if id_match else prefix
 
-        elif filename.endswith("_4K_N"):
-            base_name = filename[:-5]  # Remove _4K_N
-            if base_name not in texture_sets:
-                texture_sets[base_name] = {}
-            texture_sets[base_name]['normal'] = exr_file
+                if unique_id not in texture_sets:
+                    texture_sets[unique_id] = {'folder': exr_file.parent}
+                texture_sets[unique_id]['diffuse'] = exr_file
+                log_func(f"  -> Found diffuse with ID '{unique_id}'")
 
-        elif filename.endswith("_4K_ORDp"):
-            base_name = filename[:-8]  # Remove _4K_ORDp
-            if base_name not in texture_sets:
-                texture_sets[base_name] = {}
-            texture_sets[base_name]['ordp'] = exr_file
+        elif "_4K_N" in filename:
+            parts = filename.split("_4K_")
+            if len(parts) == 2:
+                prefix = parts[0]
+                id_match = prefix.split("_")
+                unique_id = id_match[-1] if id_match else prefix
 
-    # Filter complete sets
+                if unique_id not in texture_sets:
+                    texture_sets[unique_id] = {'folder': exr_file.parent}
+                texture_sets[unique_id]['normal'] = exr_file
+                log_func(f"  -> Found normal with ID '{unique_id}'")
+
+        elif "_4K_ORDp" in filename:
+            parts = filename.split("_4K_")
+            if len(parts) == 2:
+                prefix = parts[0]
+                id_match = prefix.split("_")
+                unique_id = id_match[-1] if id_match else prefix
+
+                if unique_id not in texture_sets:
+                    texture_sets[unique_id] = {'folder': exr_file.parent}
+                texture_sets[unique_id]['ordp'] = exr_file
+                log_func(f"  -> Found ORDp with ID '{unique_id}'")
+
+    # Filter complete sets (must have all three files in same folder)
     complete_sets = []
-    for base_name, files in texture_sets.items():
+    for unique_id, files in texture_sets.items():
         if all(key in files for key in ['diffuse', 'normal', 'ordp']):
+            # Use the diffuse filename as base name for output
+            base_name = files['diffuse'].stem[:-5]  # Remove _4K_D
             complete_sets.append((
                 files['diffuse'],
                 files['normal'],
                 files['ordp'],
                 base_name
             ))
+            log_func(f"Complete set with ID '{unique_id}': {base_name}", 'success' if hasattr(log_func, '__self__') else 'info')
         else:
             missing = [k for k in ['diffuse', 'normal', 'ordp'] if k not in files]
-            print(f"Warning: Incomplete set for '{base_name}', missing: {missing}")
+            log_func(f"Incomplete set for ID '{unique_id}', missing: {missing}", 'warning' if hasattr(log_func, '__self__') else 'info')
 
     return complete_sets
 

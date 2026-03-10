@@ -59,13 +59,34 @@
             color: #333;
         }
 
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+        }
+
         .form-group input {
-            width: 100%;
+            flex: 1;
             padding: 12px;
             border: 2px solid #ddd;
             border-radius: 5px;
             font-size: 1em;
             transition: border-color 0.3s;
+        }
+
+        .browse-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+            white-space: nowrap;
+            transition: background 0.2s;
+        }
+
+        .browse-btn:hover {
+            background: #5568d3;
         }
 
         .form-group input:focus {
@@ -213,6 +234,159 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+
+        /* Modal styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+        }
+
+        .modal.active {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-content {
+            background: white;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+
+        .modal-header {
+            padding: 20px;
+            border-bottom: 2px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            color: #333;
+        }
+
+        .close-btn {
+            background: none;
+            border: none;
+            font-size: 1.5em;
+            cursor: pointer;
+            color: #666;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+        }
+
+        .close-btn:hover {
+            color: #333;
+        }
+
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
+        }
+
+        .current-path {
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-family: monospace;
+            word-break: break-all;
+            font-size: 0.9em;
+        }
+
+        .nav-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .nav-btn {
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: #5568d3;
+        }
+
+        .nav-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .directory-list {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .directory-item {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            transition: background 0.2s;
+        }
+
+        .directory-item:hover {
+            background: #f5f5f5;
+        }
+
+        .directory-item:last-child {
+            border-bottom: none;
+        }
+
+        .directory-icon {
+            font-size: 1.2em;
+        }
+
+        .modal-footer {
+            padding: 20px;
+            border-top: 2px solid #eee;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+        }
+
+        .modal-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+
+        .modal-btn.primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .modal-btn.secondary {
+            background: #eee;
+            color: #333;
+        }
     </style>
 </head>
 <body>
@@ -226,13 +400,19 @@
             <form id="conversionForm">
                 <div class="form-group">
                     <label for="inputDir">Input Directory</label>
-                    <input type="text" id="inputDir" name="inputDir" placeholder="C:\Textures\Input" required>
+                    <div class="input-wrapper">
+                        <input type="text" id="inputDir" name="inputDir" placeholder="C:\Textures\Input" required>
+                        <button type="button" class="browse-btn" onclick="openBrowser('input')">Browse...</button>
+                    </div>
                     <small>Folder containing your Megascans EXR files (will search subdirectories)</small>
                 </div>
 
                 <div class="form-group">
                     <label for="outputDir">Output Directory</label>
-                    <input type="text" id="outputDir" name="outputDir" placeholder="C:\Textures\Output" required>
+                    <div class="input-wrapper">
+                        <input type="text" id="outputDir" name="outputDir" placeholder="C:\Textures\Output" required>
+                        <button type="button" class="browse-btn" onclick="openBrowser('output')">Browse...</button>
+                    </div>
                     <small>Folder where converted PNG files will be saved</small>
                 </div>
 
@@ -273,6 +453,30 @@
         </div>
     </div>
 
+    <!-- Directory Browser Modal -->
+    <div class="modal" id="browserModal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Browse Directories</h2>
+                <button class="close-btn" onclick="closeBrowser()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="current-path" id="currentPath"></div>
+                <div class="nav-buttons">
+                    <button class="nav-btn" id="upBtn" onclick="navigateUp()">⬆ Up</button>
+                    <button class="nav-btn" id="rootBtn" onclick="navigateRoot()">🏠 Root/Drives</button>
+                </div>
+                <div class="directory-list" id="directoryList">
+                    <!-- Directories will be listed here -->
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" onclick="closeBrowser()">Cancel</button>
+                <button class="modal-btn primary" onclick="selectCurrentDirectory()">Select Current Directory</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         const form = document.getElementById('conversionForm');
         const convertBtn = document.getElementById('convertBtn');
@@ -288,11 +492,33 @@
         let logsCheckInterval = null;
         let lastLogCount = 0;
 
+        // Directory browser state
+        let currentBrowserPath = '';
+        let parentBrowserPath = null;
+        let browserTargetInput = null;
+
+        // Load saved directories on page load
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedInputDir = localStorage.getItem('inputDir');
+            const savedOutputDir = localStorage.getItem('outputDir');
+
+            if (savedInputDir) {
+                document.getElementById('inputDir').value = savedInputDir;
+            }
+            if (savedOutputDir) {
+                document.getElementById('outputDir').value = savedOutputDir;
+            }
+        });
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
 
             const inputDir = document.getElementById('inputDir').value;
             const outputDir = document.getElementById('outputDir').value;
+
+            // Save directories to localStorage
+            localStorage.setItem('inputDir', inputDir);
+            localStorage.setItem('outputDir', outputDir);
 
             // Disable form
             convertBtn.disabled = true;
@@ -360,7 +586,7 @@
                         clearInterval(logsCheckInterval);
                         convertBtn.disabled = false;
                         convertBtn.textContent = 'Start Conversion';
-                        statusText.innerHTML = '<strong>✓ Conversion Complete!</strong>';
+                        statusText.innerHTML = '<strong>Conversion Complete!</strong>';
                         progressSection.querySelector('.spinner').style.display = 'none';
                     }
 
@@ -396,6 +622,119 @@
                 }
             }, 500);
         }
+
+        // Directory browser functions
+        async function openBrowser(targetType) {
+            browserTargetInput = targetType;
+            const inputField = targetType === 'input' ? document.getElementById('inputDir') : document.getElementById('outputDir');
+            const currentValue = inputField.value;
+
+            // Start from the current value if it exists, otherwise start from root/drives
+            await loadDirectory(currentValue || '');
+            document.getElementById('browserModal').classList.add('active');
+        }
+
+        function closeBrowser() {
+            document.getElementById('browserModal').classList.remove('active');
+        }
+
+        async function loadDirectory(path) {
+            try {
+                const response = await fetch('/api/browse', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ path: path })
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                currentBrowserPath = data.current_path;
+                parentBrowserPath = data.parent_path;
+
+                // Update current path display
+                const currentPathElement = document.getElementById('currentPath');
+                currentPathElement.textContent = currentBrowserPath || 'Select a drive:';
+
+                // Update up button state
+                const upBtn = document.getElementById('upBtn');
+                upBtn.disabled = !parentBrowserPath;
+
+                // Update directory list
+                const directoryList = document.getElementById('directoryList');
+                directoryList.innerHTML = '';
+
+                if (data.items.length === 0) {
+                    const emptyMsg = document.createElement('div');
+                    emptyMsg.style.padding = '20px';
+                    emptyMsg.style.textAlign = 'center';
+                    emptyMsg.style.color = '#999';
+                    emptyMsg.textContent = 'No subdirectories found';
+                    directoryList.appendChild(emptyMsg);
+                } else {
+                    data.items.forEach(item => {
+                        const itemDiv = document.createElement('div');
+                        itemDiv.className = 'directory-item';
+                        itemDiv.onclick = () => loadDirectory(item.path);
+
+                        const icon = document.createElement('span');
+                        icon.className = 'directory-icon';
+                        icon.textContent = item.is_drive ? '💾' : '📁';
+
+                        const name = document.createElement('span');
+                        name.textContent = item.name;
+
+                        itemDiv.appendChild(icon);
+                        itemDiv.appendChild(name);
+                        directoryList.appendChild(itemDiv);
+                    });
+                }
+
+            } catch (error) {
+                alert('Error loading directory: ' + error.message);
+            }
+        }
+
+        async function navigateUp() {
+            if (parentBrowserPath) {
+                await loadDirectory(parentBrowserPath);
+            }
+        }
+
+        async function navigateRoot() {
+            await loadDirectory('');
+        }
+
+        function selectCurrentDirectory() {
+            if (!currentBrowserPath) {
+                alert('Please select a directory');
+                return;
+            }
+
+            const inputField = browserTargetInput === 'input'
+                ? document.getElementById('inputDir')
+                : document.getElementById('outputDir');
+
+            inputField.value = currentBrowserPath;
+
+            // Save to localStorage immediately
+            localStorage.setItem(browserTargetInput === 'input' ? 'inputDir' : 'outputDir', currentBrowserPath);
+
+            closeBrowser();
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('browserModal').addEventListener('click', (e) => {
+            if (e.target.id === 'browserModal') {
+                closeBrowser();
+            }
+        });
     </script>
 </body>
 </html>

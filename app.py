@@ -32,12 +32,19 @@ state_lock = Lock()
 
 def log_message(message, level='info'):
     """Add a message to the log."""
-    with state_lock:
-        conversion_state['logs'].append({
-            'message': message,
-            'level': level
-        })
+    try:
+        with state_lock:
+            conversion_state['logs'].append({
+                'message': message,
+                'level': level
+            })
         print(message)
+    except Exception as e:
+        # If logging fails (e.g., encoding errors), don't crash the conversion
+        try:
+            print(f"[Logging error: {str(e)}]")
+        except:
+            pass
 
 
 def update_progress(current, total, current_file=''):
@@ -74,7 +81,7 @@ def run_conversion(input_dir, output_dir):
         output_path.mkdir(parents=True, exist_ok=True)
 
         # Find all texture sets
-        texture_sets = find_texture_sets(input_dir)
+        texture_sets = find_texture_sets(input_dir, log_message)
 
         if not texture_sets:
             log_message("No complete texture sets found!", 'warning')
@@ -97,15 +104,15 @@ def run_conversion(input_dir, output_dir):
                 if process_texture_set(diffuse_path, normal_path, ordp_path, output_path, base_name):
                     with state_lock:
                         conversion_state['successful'] += 1
-                    log_message(f"  ✓ Successfully processed {base_name}", 'success')
+                    log_message(f"  [OK] Successfully processed {base_name}", 'success')
                 else:
                     with state_lock:
                         conversion_state['failed'] += 1
-                    log_message(f"  ✗ Failed to process {base_name}", 'error')
+                    log_message(f"  [FAIL] Failed to process {base_name}", 'error')
             except Exception as e:
                 with state_lock:
                     conversion_state['failed'] += 1
-                log_message(f"  ✗ Error processing {base_name}: {str(e)}", 'error')
+                log_message(f"  [ERROR] Error processing {base_name}: {str(e)}", 'error')
 
         update_progress(total, total, '')
         log_message("=" * 60)
@@ -165,6 +172,71 @@ def logs():
     """Get the conversion logs."""
     with state_lock:
         return jsonify({'logs': conversion_state['logs']})
+
+
+@app.route('/api/browse', methods=['POST'])
+def browse():
+    """Browse directories."""
+    data = request.json
+    current_path = data.get('path', '')
+
+    # If no path provided, list drives on Windows or start from root on Unix
+    if not current_path:
+        if sys.platform == 'win32':
+            import string
+            from ctypes import windll
+            drives = []
+            bitmask = windll.kernel32.GetLogicalDrives()
+            for letter in string.ascii_uppercase:
+                if bitmask & 1:
+                    drive = f"{letter}:\\"
+                    drives.append({
+                        'name': drive,
+                        'path': drive,
+                        'is_dir': True,
+                        'is_drive': True
+                    })
+                bitmask >>= 1
+            return jsonify({'items': drives, 'current_path': '', 'parent_path': None})
+        else:
+            current_path = '/'
+
+    try:
+        path = Path(current_path)
+
+        if not path.exists():
+            return jsonify({'error': 'Path does not exist'}), 400
+
+        if not path.is_dir():
+            return jsonify({'error': 'Path is not a directory'}), 400
+
+        items = []
+
+        # Add directories only (no files)
+        for item in sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            if item.is_dir():
+                try:
+                    items.append({
+                        'name': item.name,
+                        'path': str(item),
+                        'is_dir': True,
+                        'is_drive': False
+                    })
+                except (PermissionError, OSError):
+                    # Skip directories we can't access
+                    pass
+
+        # Get parent path
+        parent_path = str(path.parent) if path.parent != path else None
+
+        return jsonify({
+            'items': items,
+            'current_path': str(path),
+            'parent_path': parent_path
+        })
+
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 
 def open_browser():
