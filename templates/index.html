@@ -64,13 +64,20 @@
             gap: 10px;
         }
 
-        .form-group input {
+        .form-group input,
+        .form-group select {
             flex: 1;
             padding: 12px;
             border: 2px solid #ddd;
             border-radius: 5px;
             font-size: 1em;
             transition: border-color 0.3s;
+        }
+
+        .form-group select {
+            width: 100%;
+            background: white;
+            cursor: pointer;
         }
 
         .browse-btn {
@@ -399,6 +406,14 @@
         <div class="content">
             <form id="conversionForm">
                 <div class="form-group">
+                    <label for="template">Conversion Template</label>
+                    <select id="template" name="template" required>
+                        <option value="">Loading templates...</option>
+                    </select>
+                    <small id="templateDescription">Select a template to see its description</small>
+                </div>
+
+                <div class="form-group">
                     <label for="inputDir">Input Directory</label>
                     <div class="input-wrapper">
                         <input type="text" id="inputDir" name="inputDir" placeholder="C:\Textures\Input" required>
@@ -497,10 +512,14 @@
         let parentBrowserPath = null;
         let browserTargetInput = null;
 
-        // Load saved directories on page load
-        window.addEventListener('DOMContentLoaded', () => {
+        // Templates data
+        let templatesData = {};
+
+        // Load saved directories and templates on page load
+        window.addEventListener('DOMContentLoaded', async () => {
             const savedInputDir = localStorage.getItem('inputDir');
             const savedOutputDir = localStorage.getItem('outputDir');
+            const savedTemplate = localStorage.getItem('template') || 'dr_nd';
 
             if (savedInputDir) {
                 document.getElementById('inputDir').value = savedInputDir;
@@ -508,6 +527,52 @@
             if (savedOutputDir) {
                 document.getElementById('outputDir').value = savedOutputDir;
             }
+
+            // Load templates
+            await loadTemplates();
+            document.getElementById('template').value = savedTemplate;
+            updateTemplateDescription();
+        });
+
+        async function loadTemplates() {
+            try {
+                const response = await fetch('/api/templates');
+                const data = await response.json();
+                templatesData = data.templates;
+
+                const templateSelect = document.getElementById('template');
+                templateSelect.innerHTML = '';
+
+                for (const [id, template] of Object.entries(templatesData)) {
+                    const option = document.createElement('option');
+                    option.value = id;
+                    option.textContent = template.name;
+                    templateSelect.appendChild(option);
+                }
+            } catch (error) {
+                console.error('Error loading templates:', error);
+                alert('Failed to load templates');
+            }
+        }
+
+        function updateTemplateDescription() {
+            const templateId = document.getElementById('template').value;
+            const descElement = document.getElementById('templateDescription');
+
+            if (templateId && templatesData[templateId]) {
+                descElement.textContent = templatesData[templateId].description;
+            } else {
+                descElement.textContent = 'Select a template to see its description';
+            }
+        }
+
+        // Update description when template changes
+        document.addEventListener('DOMContentLoaded', () => {
+            document.getElementById('template').addEventListener('change', () => {
+                updateTemplateDescription();
+                // Save template selection
+                localStorage.setItem('template', document.getElementById('template').value);
+            });
         });
 
         form.addEventListener('submit', async (e) => {
@@ -515,10 +580,12 @@
 
             const inputDir = document.getElementById('inputDir').value;
             const outputDir = document.getElementById('outputDir').value;
+            const templateId = document.getElementById('template').value;
 
-            // Save directories to localStorage
+            // Save directories and template to localStorage
             localStorage.setItem('inputDir', inputDir);
             localStorage.setItem('outputDir', outputDir);
+            localStorage.setItem('template', templateId);
 
             // Disable form
             convertBtn.disabled = true;
@@ -537,7 +604,8 @@
                     },
                     body: JSON.stringify({
                         input_dir: inputDir,
-                        output_dir: outputDir
+                        output_dir: outputDir,
+                        template_id: templateId
                     })
                 });
 

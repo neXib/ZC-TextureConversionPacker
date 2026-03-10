@@ -5,6 +5,7 @@ Flask Web UI for Megascans Texture Converter
 
 import os
 import sys
+import json
 import webbrowser
 from threading import Thread, Lock
 from pathlib import Path
@@ -12,7 +13,7 @@ from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 
 # Import our conversion functions
-from convert_textures import find_texture_sets, process_texture_set
+from convert_textures import find_texture_sets, process_texture_set_from_template
 
 app = Flask(__name__)
 CORS(app)
@@ -28,6 +29,82 @@ conversion_state = {
     'failed': 0
 }
 state_lock = Lock()
+
+# Built-in templates
+BUILTIN_TEMPLATES = {
+    'dr_nd': {
+        'name': 'D,N,ORDp to DR,ND (Default)',
+        'description': 'Diffuse+Roughness (DR) and Normal+Displacement (ND)',
+        'input_files': ['D', 'N', 'ORDp'],
+        'outputs': [
+            {
+                'name': 'DR',
+                'channels': [
+                    {'source': 'D', 'channel': 'R', 'target': 'R'},
+                    {'source': 'D', 'channel': 'G', 'target': 'G'},
+                    {'source': 'D', 'channel': 'B', 'target': 'B'},
+                    {'source': 'ORDp', 'channel': 'G', 'target': 'A'}
+                ],
+                'gamma_correct': True
+            },
+            {
+                'name': 'ND',
+                'channels': [
+                    {'source': 'N', 'channel': 'R', 'target': 'R'},
+                    {'source': 'N', 'channel': 'G', 'target': 'G'},
+                    {'source': 'N', 'channel': 'B', 'target': 'B'},
+                    {'source': 'ORDp', 'channel': 'B', 'target': 'A'}
+                ],
+                'gamma_correct': False
+            }
+        ]
+    },
+    'dr_nod': {
+        'name': 'D,N,ORDp to DR,NOD',
+        'description': 'Diffuse+Roughness (DR) and Normal(RG)+Occlusion+Displacement (NOD)',
+        'input_files': ['D', 'N', 'ORDp'],
+        'outputs': [
+            {
+                'name': 'DR',
+                'channels': [
+                    {'source': 'D', 'channel': 'R', 'target': 'R'},
+                    {'source': 'D', 'channel': 'G', 'target': 'G'},
+                    {'source': 'D', 'channel': 'B', 'target': 'B'},
+                    {'source': 'ORDp', 'channel': 'G', 'target': 'A'}
+                ],
+                'gamma_correct': True
+            },
+            {
+                'name': 'NOD',
+                'channels': [
+                    {'source': 'N', 'channel': 'R', 'target': 'R'},
+                    {'source': 'N', 'channel': 'G', 'target': 'G'},
+                    {'source': 'ORDp', 'channel': 'R', 'target': 'B'},
+                    {'source': 'ORDp', 'channel': 'B', 'target': 'A'}
+                ],
+                'gamma_correct': False
+            }
+        ]
+    }
+}
+
+# User templates file
+TEMPLATES_FILE = Path('user_templates.json')
+
+def load_user_templates():
+    """Load user-defined templates from file."""
+    if TEMPLATES_FILE.exists():
+        try:
+            with open(TEMPLATES_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+    return {}
+
+def save_user_templates(templates):
+    """Save user-defined templates to file."""
+    with open(TEMPLATES_FILE, 'w') as f:
+        json.dump(templates, f, indent=2)
 
 
 def log_message(message, level='info'):
@@ -55,7 +132,7 @@ def update_progress(current, total, current_file=''):
         conversion_state['current_file'] = current_file
 
 
-def run_conversion(input_dir, output_dir):
+def run_conversion(input_dir, output_dir, template_id):
     """Run the conversion process in a background thread."""
     try:
         with state_lock:
@@ -66,6 +143,16 @@ def run_conversion(input_dir, output_dir):
             conversion_state['successful'] = 0
             conversion_state['failed'] = 0
 
+        # Get template
+        all_templates = {**BUILTIN_TEMPLATES, **load_user_templates()}
+        if template_id not in all_templates:
+            log_message(f"Error: Template '{template_id}' not found", 'error')
+            with state_lock:
+                conversion_state['running'] = False
+            return
+
+        template = all_templates[template_id]
+        log_message(f"Using template: {template['name']}")
         log_message(f"Scanning for texture sets in: {input_dir}")
         log_message(f"Output directory: {output_dir}")
 
@@ -80,12 +167,13 @@ def run_conversion(input_dir, output_dir):
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
-        # Find all texture sets
-        texture_sets = find_texture_sets(input_dir, log_message)
+        # Find all texture sets based on template input files
+        texture_sets = find_texture_sets(input_dir, log_message, template['input_files'])
 
         if not texture_sets:
             log_message("No complete texture sets found!", 'warning')
-            log_message("Looking for files matching patterns: *_4K_D.exr, *_4K_N.exr, *_4K_ORDp.exr", 'info')
+            input_patterns = ', '.join([f"*_4K_{f}.exr" for f in template['input_files']])
+            log_message(f"Looking for files matching patterns: {input_patterns}", 'info')
             with state_lock:
                 conversion_state['running'] = False
             return
@@ -96,12 +184,12 @@ def run_conversion(input_dir, output_dir):
         total = len(texture_sets)
         update_progress(0, total)
 
-        for idx, (diffuse_path, normal_path, ordp_path, base_name) in enumerate(texture_sets, 1):
+        for idx, (file_paths, base_name) in enumerate(texture_sets, 1):
             update_progress(idx - 1, total, base_name)
             log_message(f"Processing [{idx}/{total}]: {base_name}")
 
             try:
-                if process_texture_set(diffuse_path, normal_path, ordp_path, output_path, base_name):
+                if process_texture_set_from_template(file_paths, output_path, base_name, template):
                     with state_lock:
                         conversion_state['successful'] += 1
                     log_message(f"  [OK] Successfully processed {base_name}", 'success')
@@ -131,12 +219,20 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/templates', methods=['GET'])
+def get_templates():
+    """Get all available templates."""
+    all_templates = {**BUILTIN_TEMPLATES, **load_user_templates()}
+    return jsonify({'templates': all_templates})
+
+
 @app.route('/api/convert', methods=['POST'])
 def convert():
     """Start the conversion process."""
     data = request.json
     input_dir = data.get('input_dir', '')
     output_dir = data.get('output_dir', '')
+    template_id = data.get('template_id', 'dr_nd')  # Default template
 
     if not input_dir or not output_dir:
         return jsonify({'error': 'Both input and output directories are required'}), 400
@@ -146,7 +242,7 @@ def convert():
             return jsonify({'error': 'Conversion already in progress'}), 400
 
     # Start conversion in background thread
-    thread = Thread(target=run_conversion, args=(input_dir, output_dir))
+    thread = Thread(target=run_conversion, args=(input_dir, output_dir, template_id))
     thread.daemon = True
     thread.start()
 
