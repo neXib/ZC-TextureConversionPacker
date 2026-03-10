@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Megascans Texture Converter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2em;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 1.1em;
+        }
+
+        .content {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #333;
+        }
+
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .form-group small {
+            display: block;
+            margin-top: 5px;
+            color: #666;
+            font-size: 0.9em;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 1.1em;
+            border-radius: 5px;
+            cursor: pointer;
+            width: 100%;
+            font-weight: 600;
+            transition: transform 0.2s;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-2px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .progress-section {
+            display: none;
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+        }
+
+        .progress-section.active {
+            display: block;
+        }
+
+        .progress-bar-container {
+            width: 100%;
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 15px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+        }
+
+        .status-text {
+            text-align: center;
+            margin: 10px 0;
+            font-size: 1.1em;
+            color: #333;
+        }
+
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+
+        .stat {
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .logs-container {
+            margin-top: 20px;
+            max-height: 300px;
+            overflow-y: auto;
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+        }
+
+        .log-entry {
+            padding: 8px;
+            margin-bottom: 5px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.9em;
+        }
+
+        .log-entry.info {
+            background: #e3f2fd;
+            color: #1565c0;
+        }
+
+        .log-entry.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .log-entry.warning {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .log-entry.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid rgba(102, 126, 234, 0.3);
+            border-radius: 50%;
+            border-top-color: #667eea;
+            animation: spin 1s ease-in-out infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 Megascans Texture Converter</h1>
+            <p>Convert EXR textures to PNG with custom channel packing</p>
+        </div>
+
+        <div class="content">
+            <form id="conversionForm">
+                <div class="form-group">
+                    <label for="inputDir">Input Directory</label>
+                    <input type="text" id="inputDir" name="inputDir" placeholder="C:\Textures\Input" required>
+                    <small>Folder containing your Megascans EXR files (will search subdirectories)</small>
+                </div>
+
+                <div class="form-group">
+                    <label for="outputDir">Output Directory</label>
+                    <input type="text" id="outputDir" name="outputDir" placeholder="C:\Textures\Output" required>
+                    <small>Folder where converted PNG files will be saved</small>
+                </div>
+
+                <button type="submit" class="btn" id="convertBtn">
+                    Start Conversion
+                </button>
+            </form>
+
+            <div class="progress-section" id="progressSection">
+                <div class="status-text">
+                    <span class="spinner"></span>
+                    <span id="statusText">Processing...</span>
+                </div>
+
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="progressBar">0%</div>
+                </div>
+
+                <div class="stats">
+                    <div class="stat">
+                        <div class="stat-value" id="successCount">0</div>
+                        <div class="stat-label">Successful</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="failedCount">0</div>
+                        <div class="stat-label">Failed</div>
+                    </div>
+                    <div class="stat">
+                        <div class="stat-value" id="totalCount">0</div>
+                        <div class="stat-label">Total</div>
+                    </div>
+                </div>
+
+                <div class="logs-container" id="logsContainer">
+                    <!-- Logs will be inserted here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const form = document.getElementById('conversionForm');
+        const convertBtn = document.getElementById('convertBtn');
+        const progressSection = document.getElementById('progressSection');
+        const progressBar = document.getElementById('progressBar');
+        const statusText = document.getElementById('statusText');
+        const successCount = document.getElementById('successCount');
+        const failedCount = document.getElementById('failedCount');
+        const totalCount = document.getElementById('totalCount');
+        const logsContainer = document.getElementById('logsContainer');
+
+        let statusCheckInterval = null;
+        let logsCheckInterval = null;
+        let lastLogCount = 0;
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const inputDir = document.getElementById('inputDir').value;
+            const outputDir = document.getElementById('outputDir').value;
+
+            // Disable form
+            convertBtn.disabled = true;
+            convertBtn.textContent = 'Converting...';
+
+            // Show progress section
+            progressSection.classList.add('active');
+            logsContainer.innerHTML = '';
+            lastLogCount = 0;
+
+            try {
+                const response = await fetch('/api/convert', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        input_dir: inputDir,
+                        output_dir: outputDir
+                    })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    alert('Error: ' + error.error);
+                    convertBtn.disabled = false;
+                    convertBtn.textContent = 'Start Conversion';
+                    return;
+                }
+
+                // Start polling for status and logs
+                startStatusPolling();
+                startLogsPolling();
+
+            } catch (error) {
+                alert('Error: ' + error.message);
+                convertBtn.disabled = false;
+                convertBtn.textContent = 'Start Conversion';
+            }
+        });
+
+        function startStatusPolling() {
+            statusCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/status');
+                    const data = await response.json();
+
+                    if (data.total > 0) {
+                        const percentage = Math.round((data.progress / data.total) * 100);
+                        progressBar.style.width = percentage + '%';
+                        progressBar.textContent = percentage + '%';
+                    }
+
+                    if (data.current_file) {
+                        statusText.textContent = `Processing: ${data.current_file}`;
+                    }
+
+                    successCount.textContent = data.successful;
+                    failedCount.textContent = data.failed;
+                    totalCount.textContent = data.total;
+
+                    // If conversion is complete
+                    if (!data.running && data.total > 0 && data.progress >= data.total) {
+                        clearInterval(statusCheckInterval);
+                        clearInterval(logsCheckInterval);
+                        convertBtn.disabled = false;
+                        convertBtn.textContent = 'Start Conversion';
+                        statusText.innerHTML = '<strong>✓ Conversion Complete!</strong>';
+                        progressSection.querySelector('.spinner').style.display = 'none';
+                    }
+
+                } catch (error) {
+                    console.error('Status check error:', error);
+                }
+            }, 500);
+        }
+
+        function startLogsPolling() {
+            logsCheckInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/logs');
+                    const data = await response.json();
+
+                    // Only add new logs
+                    if (data.logs.length > lastLogCount) {
+                        const newLogs = data.logs.slice(lastLogCount);
+                        newLogs.forEach(log => {
+                            const logEntry = document.createElement('div');
+                            logEntry.className = `log-entry ${log.level}`;
+                            logEntry.textContent = log.message;
+                            logsContainer.appendChild(logEntry);
+                        });
+
+                        // Auto-scroll to bottom
+                        logsContainer.scrollTop = logsContainer.scrollHeight;
+                        lastLogCount = data.logs.length;
+                    }
+
+                } catch (error) {
+                    console.error('Logs check error:', error);
+                }
+            }, 500);
+        }
+    </script>
+</body>
+</html>
