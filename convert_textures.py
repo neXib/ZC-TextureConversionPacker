@@ -74,7 +74,7 @@ def get_channel_from_exr(exr_path, channel_name):
         return np.zeros((size[1], size[0]), dtype=np.uint8)
 
 
-def process_texture_set_from_template(file_paths, output_dir, base_name, template):
+def process_texture_set_from_template(file_paths, output_dir, base_name, template, input_resolution='4K', output_resolution='4K'):
     """
     Process a set of textures using a template configuration.
 
@@ -83,15 +83,20 @@ def process_texture_set_from_template(file_paths, output_dir, base_name, templat
         output_dir: Output directory path
         base_name: Base name for output files
         template: Template dictionary defining outputs and channel mappings
+        input_resolution: Input resolution string (e.g., '4K', '8K', '2K')
+        output_resolution: Desired output resolution (will downsample if needed)
     """
-    print(f"Processing texture set: {base_name}")
+    print(f"Processing texture set: {base_name} ({input_resolution} -> {output_resolution})")
 
     try:
         # Read all input files
         file_data = {}
+        size = None
         for file_type, file_path in file_paths.items():
-            channels, size = read_exr_channels(file_path)
+            channels, file_size = read_exr_channels(file_path)
             file_data[file_type] = channels
+            if size is None:
+                size = file_size
 
         # Process each output defined in the template
         for output_def in template['outputs']:
@@ -113,9 +118,9 @@ def process_texture_set_from_template(file_paths, output_dir, base_name, templat
                         channel_array = np.clip(channel_data * 255, 0, 255).astype(np.uint8)
                     else:
                         # If channel not found, create empty channel
-                        channel_array = np.zeros(size[1::-1], dtype=np.uint8)
+                        channel_array = np.zeros((size[1], size[0]), dtype=np.uint8)
                 else:
-                    channel_array = np.zeros(size[1::-1], dtype=np.uint8)
+                    channel_array = np.zeros((size[1], size[0]), dtype=np.uint8)
 
                 output_channels.append(channel_array)
 
@@ -138,7 +143,14 @@ def process_texture_set_from_template(file_paths, output_dir, base_name, templat
                 print(f"  ERROR: Unsupported number of channels: {len(output_channels)}")
                 continue
 
-            output_path = output_dir / f"{base_name}_4K_{output_name}.png"
+            # Downsample if needed
+            if output_resolution != input_resolution:
+                target_size = get_resolution_size(output_resolution)
+                if target_size:
+                    output_image = output_image.resize(target_size, Image.Resampling.LANCZOS)
+                    print(f"  Downsampled from {input_resolution} to {output_resolution}")
+
+            output_path = output_dir / f"{base_name}_{output_resolution}_{output_name}.png"
             output_image.save(output_path, 'PNG')
             print(f"  Created: {output_path.name}")
 
@@ -147,6 +159,17 @@ def process_texture_set_from_template(file_paths, output_dir, base_name, templat
     except Exception as e:
         print(f"  ERROR processing {base_name}: {str(e)}")
         return False
+
+
+def get_resolution_size(resolution):
+    """Get pixel dimensions for a given resolution string."""
+    resolution_map = {
+        '8K': (8192, 8192),
+        '4K': (4096, 4096),
+        '2K': (2048, 2048),
+        '1K': (1024, 1024)
+    }
+    return resolution_map.get(resolution)
 
 
 def process_texture_set(diffuse_path, normal_path, ordp_path, output_dir, base_name):
@@ -217,8 +240,8 @@ def process_texture_set(diffuse_path, normal_path, ordp_path, output_dir, base_n
 def find_texture_sets(input_dir, log_func=None, required_files=None):
     """
     Find all texture sets in the input directory (including subdirectories).
-    Matches files by their unique ID (the part before _4K_X).
-    Returns a list of tuples: (file_paths_dict, base_name)
+    Matches files by their unique ID and supports multiple resolutions (1K, 2K, 4K, 8K).
+    Returns a list of tuples: (file_paths_dict, base_name, resolution)
     """
     if log_func is None:
         log_func = print
@@ -234,45 +257,61 @@ def find_texture_sets(input_dir, log_func=None, required_files=None):
 
     log_func(f"Found {len(exr_files)} EXR files total")
 
+    # Supported resolutions
+    resolutions = ['8K', '4K', '2K', '1K']
+
     for exr_file in exr_files:
         filename = exr_file.stem
         log_func(f"Checking file: {filename}")
 
-        # Extract the unique ID and file type
-        # Example: T_Forest_Floor_wgxsded_4K_D -> ID: wgxsded, Type: D
-        if "_4K_" in filename:
-            parts = filename.split("_4K_")
-            if len(parts) == 2:
-                prefix = parts[0]
-                file_type = parts[1]  # e.g., "D", "N", "ORDp"
+        # Extract the unique ID, resolution, and file type
+        # Example: T_Forest_Floor_wgxsded_4K_D -> ID: wgxsded, Resolution: 4K, Type: D
+        for resolution in resolutions:
+            pattern = f"_{resolution}_"
+            if pattern in filename:
+                parts = filename.split(pattern)
+                if len(parts) == 2:
+                    prefix = parts[0]
+                    file_type = parts[1]  # e.g., "D", "N", "ORDp"
 
-                # Extract ID (last part after underscore in prefix)
-                id_match = prefix.split("_")
-                unique_id = id_match[-1] if id_match else prefix
+                    # Extract ID (last part after underscore in prefix)
+                    id_match = prefix.split("_")
+                    unique_id = id_match[-1] if id_match else prefix
 
-                # Check if this file type is required
-                if file_type in required_files:
-                    if unique_id not in texture_sets:
-                        texture_sets[unique_id] = {'folder': exr_file.parent, 'files': {}}
-                    texture_sets[unique_id]['files'][file_type] = exr_file
-                    log_func(f"  -> Found {file_type} with ID '{unique_id}'")
+                    # Create a unique key combining ID and resolution
+                    set_key = f"{unique_id}_{resolution}"
+
+                    # Check if this file type is required
+                    if file_type in required_files:
+                        if set_key not in texture_sets:
+                            texture_sets[set_key] = {
+                                'folder': exr_file.parent,
+                                'files': {},
+                                'resolution': resolution,
+                                'unique_id': unique_id
+                            }
+                        texture_sets[set_key]['files'][file_type] = exr_file
+                        log_func(f"  -> Found {resolution} {file_type} with ID '{unique_id}'")
+                    break  # Found resolution, no need to check others
 
     # Filter complete sets (must have all required files)
     complete_sets = []
-    for unique_id, data in texture_sets.items():
+    for set_key, data in texture_sets.items():
         files = data['files']
         if all(file_type in files for file_type in required_files):
             # Use the first file's name as base name for output
             first_file = files[required_files[0]]
-            base_name = first_file.stem.rsplit('_4K_', 1)[0]
+            resolution = data['resolution']
+            base_name = first_file.stem.rsplit(f'_{resolution}_', 1)[0]
             complete_sets.append((
                 files,
-                base_name
+                base_name,
+                resolution
             ))
-            log_func(f"Complete set with ID '{unique_id}': {base_name}", 'success' if hasattr(log_func, '__self__') else 'info')
+            log_func(f"Complete {resolution} set with ID '{data['unique_id']}': {base_name}", 'success' if hasattr(log_func, '__self__') else 'info')
         else:
             missing = [ft for ft in required_files if ft not in files]
-            log_func(f"Incomplete set for ID '{unique_id}', missing: {missing}", 'warning' if hasattr(log_func, '__self__') else 'info')
+            log_func(f"Incomplete set for ID '{data['unique_id']}' ({data['resolution']}), missing: {missing}", 'warning' if hasattr(log_func, '__self__') else 'info')
 
     return complete_sets
 

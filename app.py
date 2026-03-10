@@ -132,7 +132,7 @@ def update_progress(current, total, current_file=''):
         conversion_state['current_file'] = current_file
 
 
-def run_conversion(input_dir, output_dir, template_id):
+def run_conversion(input_dir, output_dir, template_id, output_resolution='input'):
     """Run the conversion process in a background thread."""
     try:
         with state_lock:
@@ -155,6 +155,8 @@ def run_conversion(input_dir, output_dir, template_id):
         log_message(f"Using template: {template['name']}")
         log_message(f"Scanning for texture sets in: {input_dir}")
         log_message(f"Output directory: {output_dir}")
+        if output_resolution != 'input':
+            log_message(f"Output resolution: {output_resolution}")
 
         # Validate input directory
         if not os.path.isdir(input_dir):
@@ -172,8 +174,7 @@ def run_conversion(input_dir, output_dir, template_id):
 
         if not texture_sets:
             log_message("No complete texture sets found!", 'warning')
-            input_patterns = ', '.join([f"*_4K_{f}.exr" for f in template['input_files']])
-            log_message(f"Looking for files matching patterns: {input_patterns}", 'info')
+            log_message("Looking for files matching patterns: *_[8K/4K/2K/1K]_[D/N/ORDp].exr", 'info')
             with state_lock:
                 conversion_state['running'] = False
             return
@@ -184,12 +185,15 @@ def run_conversion(input_dir, output_dir, template_id):
         total = len(texture_sets)
         update_progress(0, total)
 
-        for idx, (file_paths, base_name) in enumerate(texture_sets, 1):
+        for idx, (file_paths, base_name, input_resolution) in enumerate(texture_sets, 1):
             update_progress(idx - 1, total, base_name)
-            log_message(f"Processing [{idx}/{total}]: {base_name}")
+            log_message(f"Processing [{idx}/{total}]: {base_name} ({input_resolution})")
+
+            # Determine actual output resolution
+            actual_output_res = input_resolution if output_resolution == 'input' else output_resolution
 
             try:
-                if process_texture_set_from_template(file_paths, output_path, base_name, template):
+                if process_texture_set_from_template(file_paths, output_path, base_name, template, input_resolution, actual_output_res):
                     with state_lock:
                         conversion_state['successful'] += 1
                     log_message(f"  [OK] Successfully processed {base_name}", 'success')
@@ -233,6 +237,7 @@ def convert():
     input_dir = data.get('input_dir', '')
     output_dir = data.get('output_dir', '')
     template_id = data.get('template_id', 'dr_nd')  # Default template
+    output_resolution = data.get('output_resolution', 'input')  # Default to input resolution
 
     if not input_dir or not output_dir:
         return jsonify({'error': 'Both input and output directories are required'}), 400
@@ -242,7 +247,7 @@ def convert():
             return jsonify({'error': 'Conversion already in progress'}), 400
 
     # Start conversion in background thread
-    thread = Thread(target=run_conversion, args=(input_dir, output_dir, template_id))
+    thread = Thread(target=run_conversion, args=(input_dir, output_dir, template_id, output_resolution))
     thread.daemon = True
     thread.start()
 
