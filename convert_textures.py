@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Megascans EXR to PNG Texture Converter
+EXR to PNG Texture Converter and Packer
 Converts EXR texture sets to PNG with custom channel packing:
 - 4K_DR: RGB from Diffuse + Green from ORDp as Alpha
 - 4K_ND: RGB from Normal + Blue from ORDp as Alpha

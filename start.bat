@@ -1,6 +1,6 @@
 @echo off
 echo ========================================
-echo Megascans Texture Converter - Startup
+echo Texture Converter and Packer - Startup
 echo ========================================
 echo.
 
