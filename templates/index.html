@@ -394,6 +394,67 @@
             background: #eee;
             color: #333;
         }
+
+        .output-definition {
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f9f9f9;
+        }
+
+        .output-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .output-header h4 {
+            margin: 0;
+            color: #333;
+        }
+
+        .remove-btn {
+            background: #c62828;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+
+        .channel-mapping {
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 10px;
+            margin-bottom: 10px;
+            background: white;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .channel-mapping select,
+        .channel-mapping input {
+            padding: 5px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            font-size: 0.9em;
+        }
+
+        .add-channel-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
     </style>
 </head>
 <body>
@@ -404,12 +465,19 @@
         </div>
 
         <div class="content">
+            <div style="margin-bottom: 20px; text-align: right;">
+                <button type="button" class="browse-btn" onclick="openTemplateCreator()">+ Create Template</button>
+            </div>
+
             <form id="conversionForm">
                 <div class="form-group">
                     <label for="template">Conversion Template</label>
-                    <select id="template" name="template" required>
-                        <option value="">Loading templates...</option>
-                    </select>
+                    <div class="input-wrapper">
+                        <select id="template" name="template" required style="flex: 1;">
+                            <option value="">Loading templates...</option>
+                        </select>
+                        <button type="button" class="browse-btn" id="deleteTemplateBtn" onclick="deleteTemplate()" style="background: #c62828;">Delete</button>
+                    </div>
                     <small id="templateDescription">Select a template to see its description</small>
                 </div>
 
@@ -476,6 +544,55 @@
                 <div class="logs-container" id="logsContainer">
                     <!-- Logs will be inserted here -->
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Template Creator Modal -->
+    <div class="modal" id="templateCreatorModal">
+        <div class="modal-content" style="max-width: 800px;">
+            <div class="modal-header">
+                <h2>Create Custom Template</h2>
+                <button class="close-btn" onclick="closeTemplateCreator()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="templateCreatorForm">
+                    <div class="form-group">
+                        <label for="templateId">Template ID (unique identifier)</label>
+                        <input type="text" id="templateId" required pattern="[a-z_]+"
+                               placeholder="e.g., my_custom_template" title="Lowercase letters and underscores only">
+                        <small>Use lowercase letters and underscores only</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="templateName">Template Name</label>
+                        <input type="text" id="templateName" required placeholder="e.g., My Custom Template">
+                    </div>
+
+                    <div class="form-group">
+                        <label for="templateDesc">Description</label>
+                        <input type="text" id="templateDesc" required placeholder="Brief description of the template">
+                    </div>
+
+                    <div class="form-group">
+                        <label>Input Files (comma-separated)</label>
+                        <input type="text" id="inputFiles" required placeholder="e.g., D,N,ORDp"
+                               title="Comma-separated list of input file types">
+                        <small>File types to look for (e.g., D for Diffuse, N for Normal, ORDp for masks)</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label>Output Files</label>
+                        <div id="outputsContainer">
+                            <!-- Output definitions will be added here -->
+                        </div>
+                        <button type="button" class="nav-btn" onclick="addOutput()" style="margin-top: 10px;">+ Add Output File</button>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn secondary" onclick="closeTemplateCreator()">Cancel</button>
+                <button class="modal-btn primary" onclick="saveTemplate()">Save Template</button>
             </div>
         </div>
     </div>
@@ -818,6 +935,289 @@
         document.getElementById('browserModal').addEventListener('click', (e) => {
             if (e.target.id === 'browserModal') {
                 closeBrowser();
+            }
+        });
+
+        // Template Creator Functions
+        let outputCounter = 0;
+
+        function openTemplateCreator() {
+            document.getElementById('templateCreatorModal').classList.add('active');
+            document.getElementById('templateCreatorForm').reset();
+            document.getElementById('outputsContainer').innerHTML = '';
+            outputCounter = 0;
+            // Add one default output
+            addOutput();
+        }
+
+        function closeTemplateCreator() {
+            document.getElementById('templateCreatorModal').classList.remove('active');
+        }
+
+        function addOutput() {
+            outputCounter++;
+            const outputId = `output_${outputCounter}`;
+            const container = document.getElementById('outputsContainer');
+
+            const outputDiv = document.createElement('div');
+            outputDiv.className = 'output-definition';
+            outputDiv.id = outputId;
+            outputDiv.innerHTML = `
+                <div class="output-header">
+                    <h4>Output File #${outputCounter}</h4>
+                    <button type="button" class="remove-btn" onclick="removeOutput('${outputId}')">Remove</button>
+                </div>
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label>Output Name</label>
+                    <input type="text" class="output-name" required placeholder="e.g., DR" style="width: 100%;">
+                    <small>Output filename suffix (e.g., DR will create filename_4K_DR.png)</small>
+                </div>
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label>
+                        <input type="checkbox" class="gamma-correct"> Apply Gamma Correction (sRGB)
+                    </label>
+                    <small>Enable for diffuse/color textures, disable for normal/data textures</small>
+                </div>
+                <div class="form-group">
+                    <label>Channel Mappings</label>
+                    <div class="channels-container">
+                        <!-- Channels will be added here -->
+                    </div>
+                    <button type="button" class="add-channel-btn" onclick="addChannel('${outputId}')">+ Add Channel</button>
+                </div>
+            `;
+
+            container.appendChild(outputDiv);
+
+            // Add 4 default channels (R, G, B, A)
+            ['R', 'G', 'B', 'A'].forEach(ch => addChannel(outputId, ch));
+        }
+
+        function removeOutput(outputId) {
+            document.getElementById(outputId).remove();
+        }
+
+        function addChannel(outputId, defaultTarget = '') {
+            const channelsContainer = document.querySelector(`#${outputId} .channels-container`);
+            const channelId = `channel_${Date.now()}_${Math.random()}`;
+
+            const channelDiv = document.createElement('div');
+            channelDiv.className = 'channel-mapping';
+            channelDiv.id = channelId;
+            channelDiv.innerHTML = `
+                <select class="channel-source" required>
+                    <option value="">Source File</option>
+                </select>
+                <select class="channel-source-channel" required>
+                    <option value="R">R</option>
+                    <option value="G">G</option>
+                    <option value="B">B</option>
+                    <option value="A">A</option>
+                </select>
+                <select class="channel-target" required>
+                    <option value="R" ${defaultTarget === 'R' ? 'selected' : ''}>→ R</option>
+                    <option value="G" ${defaultTarget === 'G' ? 'selected' : ''}>→ G</option>
+                    <option value="B" ${defaultTarget === 'B' ? 'selected' : ''}>→ B</option>
+                    <option value="A" ${defaultTarget === 'A' ? 'selected' : ''}>→ A</option>
+                </select>
+                <button type="button" class="remove-btn" onclick="removeChannel('${channelId}')">✕</button>
+            `;
+
+            channelsContainer.appendChild(channelDiv);
+            updateSourceFileOptions();
+        }
+
+        function removeChannel(channelId) {
+            document.getElementById(channelId).remove();
+        }
+
+        function updateSourceFileOptions() {
+            const inputFiles = document.getElementById('inputFiles').value.split(',').map(f => f.trim()).filter(f => f);
+            const sourceSelects = document.querySelectorAll('.channel-source');
+
+            sourceSelects.forEach(select => {
+                const currentValue = select.value;
+                select.innerHTML = '<option value="">Source File</option>';
+                inputFiles.forEach(file => {
+                    const option = document.createElement('option');
+                    option.value = file;
+                    option.textContent = file;
+                    if (file === currentValue) {
+                        option.selected = true;
+                    }
+                    select.appendChild(option);
+                });
+            });
+        }
+
+        // Update source file options when input files change
+        document.addEventListener('DOMContentLoaded', () => {
+            const inputFilesField = document.getElementById('inputFiles');
+            if (inputFilesField) {
+                inputFilesField.addEventListener('input', updateSourceFileOptions);
+            }
+        });
+
+        async function saveTemplate() {
+            const templateId = document.getElementById('templateId').value.trim();
+            const templateName = document.getElementById('templateName').value.trim();
+            const templateDesc = document.getElementById('templateDesc').value.trim();
+            const inputFiles = document.getElementById('inputFiles').value.split(',').map(f => f.trim()).filter(f => f);
+
+            if (!templateId || !templateName || !templateDesc || inputFiles.length === 0) {
+                alert('Please fill in all required fields');
+                return;
+            }
+
+            // Validate template ID format
+            if (!/^[a-z_]+$/.test(templateId)) {
+                alert('Template ID must contain only lowercase letters and underscores');
+                return;
+            }
+
+            // Collect outputs
+            const outputs = [];
+            const outputDivs = document.querySelectorAll('.output-definition');
+
+            if (outputDivs.length === 0) {
+                alert('Please add at least one output file');
+                return;
+            }
+
+            for (const outputDiv of outputDivs) {
+                const outputName = outputDiv.querySelector('.output-name').value.trim();
+                const gammaCorrect = outputDiv.querySelector('.gamma-correct').checked;
+                const channelMappings = [];
+
+                const channels = outputDiv.querySelectorAll('.channel-mapping');
+                for (const channel of channels) {
+                    const source = channel.querySelector('.channel-source').value;
+                    const sourceChannel = channel.querySelector('.channel-source-channel').value;
+                    const target = channel.querySelector('.channel-target').value;
+
+                    if (!source) {
+                        alert('Please select a source file for all channels');
+                        return;
+                    }
+
+                    channelMappings.push({
+                        source: source,
+                        channel: sourceChannel,
+                        target: target
+                    });
+                }
+
+                if (channelMappings.length === 0) {
+                    alert('Each output must have at least one channel mapping');
+                    return;
+                }
+
+                outputs.push({
+                    name: outputName,
+                    channels: channelMappings,
+                    gamma_correct: gammaCorrect
+                });
+            }
+
+            const template = {
+                name: templateName,
+                description: templateDesc,
+                input_files: inputFiles,
+                outputs: outputs
+            };
+
+            try {
+                const response = await fetch('/api/templates', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        id: templateId,
+                        template: template
+                    })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                alert('Template saved successfully!');
+                closeTemplateCreator();
+                await loadTemplates();
+                document.getElementById('template').value = templateId;
+                updateTemplateDescription();
+            } catch (error) {
+                alert('Error saving template: ' + error.message);
+            }
+        }
+
+        async function deleteTemplate() {
+            const templateId = document.getElementById('template').value;
+
+            if (!templateId) {
+                alert('Please select a template to delete');
+                return;
+            }
+
+            // Check if it's a built-in template
+            if (templateId === 'dr_nd' || templateId === 'dr_nod') {
+                alert('Cannot delete built-in templates');
+                return;
+            }
+
+            if (!confirm(`Are you sure you want to delete the template "${templatesData[templateId]?.name}"?`)) {
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/templates/${templateId}`, {
+                    method: 'DELETE'
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert('Error: ' + data.error);
+                    return;
+                }
+
+                alert('Template deleted successfully!');
+                await loadTemplates();
+                document.getElementById('template').value = 'dr_nd';
+                updateTemplateDescription();
+            } catch (error) {
+                alert('Error deleting template: ' + error.message);
+            }
+        }
+
+        // Update delete button visibility based on template selection
+        document.addEventListener('DOMContentLoaded', () => {
+            const templateSelect = document.getElementById('template');
+            const deleteBtn = document.getElementById('deleteTemplateBtn');
+
+            if (templateSelect && deleteBtn) {
+                templateSelect.addEventListener('change', () => {
+                    const templateId = templateSelect.value;
+                    // Hide delete button for built-in templates
+                    if (templateId === 'dr_nd' || templateId === 'dr_nod' || !templateId) {
+                        deleteBtn.style.display = 'none';
+                    } else {
+                        deleteBtn.style.display = 'block';
+                    }
+                });
+                // Initial check
+                templateSelect.dispatchEvent(new Event('change'));
+            }
+        });
+
+        // Close template creator modal when clicking outside
+        document.getElementById('templateCreatorModal').addEventListener('click', (e) => {
+            if (e.target.id === 'templateCreatorModal') {
+                closeTemplateCreator();
             }
         });
     </script>

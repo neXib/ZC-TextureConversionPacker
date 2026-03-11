@@ -275,6 +275,58 @@ def logs():
         return jsonify({'logs': conversion_state['logs']})
 
 
+@app.route('/api/templates', methods=['POST'])
+def create_template():
+    """Create a new user template."""
+    data = request.json
+    template_id = data.get('id', '')
+    template_data = data.get('template', {})
+
+    if not template_id or not template_data:
+        return jsonify({'error': 'Template ID and data are required'}), 400
+
+    # Validate template structure
+    if 'name' not in template_data or 'input_files' not in template_data or 'outputs' not in template_data:
+        return jsonify({'error': 'Invalid template structure'}), 400
+
+    # Check if template ID conflicts with built-in templates
+    if template_id in BUILTIN_TEMPLATES:
+        return jsonify({'error': 'Cannot override built-in templates'}), 400
+
+    # Load existing user templates
+    user_templates = load_user_templates()
+
+    # Add/update template
+    user_templates[template_id] = template_data
+
+    # Save to file
+    save_user_templates(user_templates)
+
+    return jsonify({'status': 'success', 'message': 'Template saved successfully'})
+
+
+@app.route('/api/templates/<template_id>', methods=['DELETE'])
+def delete_template(template_id):
+    """Delete a user template."""
+    # Check if it's a built-in template
+    if template_id in BUILTIN_TEMPLATES:
+        return jsonify({'error': 'Cannot delete built-in templates'}), 400
+
+    # Load user templates
+    user_templates = load_user_templates()
+
+    if template_id not in user_templates:
+        return jsonify({'error': 'Template not found'}), 404
+
+    # Delete template
+    del user_templates[template_id]
+
+    # Save to file
+    save_user_templates(user_templates)
+
+    return jsonify({'status': 'success', 'message': 'Template deleted successfully'})
+
+
 @app.route('/api/browse', methods=['POST'])
 def browse():
     """Browse directories."""
